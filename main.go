@@ -3,33 +3,27 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os/exec"
 	"sync"
 	"time"
-	// "time"
+
 )
+type Command struct{
+	name string 
+	args []string
+}
 
 func main() {
-	// now := time.Now()
+
 	for{
-	// cmd1 := exec.Command("ps", "aux")
-	// cmd2 := exec.Command("free", "-m")
-	// cmd3 := exec.Command("lscpu")
-  name1 := "ps"
-  args1 := []string{"aux"}
-  name3 := "free"
-  args3 := []string{"-m"}
-  name2 := "lscpu"
-  args2 := []string{}
   
-	resp := make(chan string, 1024) //three messages are comming inside the channel . so its minimum buffer size is 3.
+	resp := make(chan string, 1024) 
 	wg := &sync.WaitGroup{}
 	wg.Add(3)
-	go allProcesses(name1,args1, resp, wg)
-	go cpuDetails(name2,args2, resp, wg)
-	go diskSize(name3,args3, resp, wg)
-	// time.Sleep(130*time.Millisecond)
+	go AllProcesses(resp, wg)
+	go CPUDetails(resp, wg)
+	go DiskDetails(resp, wg)
+
 
 	wg.Wait()
 	close(resp)
@@ -40,81 +34,47 @@ func main() {
   time.Sleep(1*time.Second)
   }
   
-	// fmt.Println(time.Since(now))
 }
 
-func allProcesses(name string, flags []string, resp chan string, wg *sync.WaitGroup) {
+func AllProcesses(resp chan string, wg *sync.WaitGroup) {
   
-  
-  cmd := exec.Command(name, flags...)
-	//
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		// fmt.Printf("Error creating StdoutPipe for %s: %v\n", name, err)
-		log.Fatal(err)
-
+	cmd := Command{
+		name:"ps",
+		args:[]string{"aux"},
 	}
-
-	if err := cmd.Start(); err != nil {
-		log.Fatal(err)
-
-	}
-
-	// Read the command output
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-	  resp<-scanner.Text()
-	}
-
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
-	}
-
-
-	// time.Sleep(80 * time.Millisecond)
+	CMDOutput(cmd.name,cmd.args,resp)
 	wg.Done()
 }
 
-func cpuDetails(name string,flags []string, resp chan string, wg *sync.WaitGroup) {
-  cmd := exec.Command(name, flags...)
-	//
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		// fmt.Printf("Error creating StdoutPipe for %s: %v\n", name, err)
-		log.Fatal(err)
-
+func CPUDetails(resp chan string, wg *sync.WaitGroup) {
+	cmd := Command{
+		name:"lscpu",
+		args:[]string{""},
 	}
-
-	if err := cmd.Start(); err != nil {
-		log.Fatal(err)
-
-	}
-
-	// Read the command output
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-	  resp<-scanner.Text()
-	}
-
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
-	}
-	// time.Sleep(120 * time.Millisecond)
+	CMDOutput(cmd.name,cmd.args,resp)
 	wg.Done()
 }
 
-func diskSize(name string,flags []string , resp chan string, wg *sync.WaitGroup) {
-  cmd := exec.Command(name, flags...)
+func DiskDetails(resp chan string, wg *sync.WaitGroup) {
+	cmd := Command{
+		name:"free",
+		args:[]string{"-m"},
+	}
+	CMDOutput(cmd.name,cmd.args,resp)
+	wg.Done()
+}
+
+
+func CMDOutput(name string,args []string,resp chan string){
+	cmd := exec.Command(name, args...)
 	//
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		// fmt.Printf("Error creating StdoutPipe for %s: %v\n", name, err)
-		log.Fatal(err)
-
+		fmt.Printf("Error creating StdoutPipe for %s: %v\n", name, err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		log.Fatal(err)
+		fmt.Printf("Error while starting the command %s: %v\n", name, err)
 
 	}
 
@@ -125,7 +85,10 @@ func diskSize(name string,flags []string , resp chan string, wg *sync.WaitGroup)
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
+		fmt.Printf("Error reading scanner %s: %v\n", name, err)
 	}
-	wg.Done()
+
+	if err := cmd.Wait(); err != nil {
+		fmt.Printf("Error waiting for command %s: %v\n", name, err)
+	}
 }
