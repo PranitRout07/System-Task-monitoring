@@ -3,65 +3,68 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
+	"log"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
-
 )
-type Command struct{
-	name string 
+
+type Command struct {
+	name string
 	args []string
 }
 
 func main() {
 
-	for{
-  
-	resp := make(chan string, 1024) 
-	wg := &sync.WaitGroup{}
-	wg.Add(5)
-	go AllProcesses(resp, wg)
-	go CPUDetails(resp, wg)
-	go DiskDetails(resp, wg)
-	go MemoryUsage(resp,wg)
-	go NetworkInterfaces(resp,wg)	
+	for {
 
-	wg.Wait()
-	close(resp)
+		resp := make(chan string, 1024)
+		wg := &sync.WaitGroup{}
+		wg.Add(6)
+		go AllProcesses(resp, wg)
+		go CPUDetails(resp, wg)
+		go DiskDetails(resp, wg)
+		go MemoryUsage(resp, wg)
+		go NetworkInterfaces(resp, wg)
+		go PipeCommand(resp,wg)
+		wg.Wait()
+		close(resp)
 
-	for r := range resp {
-		fmt.Println(r)
+		for r := range resp {
+			fmt.Println(r)
+		}
+		time.Sleep(1 * time.Second)
 	}
-  time.Sleep(1*time.Second)
-  }
-  
+
 }
 
 func AllProcesses(resp chan string, wg *sync.WaitGroup) {
-  
+
 	cmd := Command{
-		name:"ps",
-		args:[]string{"aux"},
+		name: "ps",
+		args: []string{"aux"},
 	}
-	CMDOutput(cmd.name,cmd.args,resp)
+	CMDOutput(cmd.name, cmd.args, resp)
 	wg.Done()
 }
 
 func CPUDetails(resp chan string, wg *sync.WaitGroup) {
 	cmd := Command{
-		name:"lscpu",
-		args:[]string{},
+		name: "lscpu",
+		args: []string{},
 	}
-	CMDOutput(cmd.name,cmd.args,resp)
+	CMDOutput(cmd.name, cmd.args, resp)
 	wg.Done()
 }
 
 func DiskDetails(resp chan string, wg *sync.WaitGroup) {
 	cmd := Command{
-		name:"free",
-		args:[]string{"-m"},
+		name: "free",
+		args: []string{"-m"},
 	}
-	CMDOutput(cmd.name,cmd.args,resp)
+	CMDOutput(cmd.name, cmd.args, resp)
 	wg.Done()
 }
 
@@ -71,9 +74,8 @@ func MemoryUsage(resp chan string, wg *sync.WaitGroup) {
 		name: "free",
 		args: []string{"-m"},
 	}
-	CMDOutput(cmd.name, cmd.args, resp);
-		
-	
+	CMDOutput(cmd.name, cmd.args, resp)
+
 }
 
 func NetworkInterfaces(resp chan string, wg *sync.WaitGroup) {
@@ -83,10 +85,10 @@ func NetworkInterfaces(resp chan string, wg *sync.WaitGroup) {
 		args: []string{"-s", "link"},
 	}
 	CMDOutput(cmd.name, cmd.args, resp)
-		
+
 }
 
-func CMDOutput(name string,args []string,resp chan string){
+func CMDOutput(name string, args []string, resp chan string) {
 	cmd := exec.Command(name, args...)
 	//
 	stdout, err := cmd.StdoutPipe()
@@ -102,7 +104,7 @@ func CMDOutput(name string,args []string,resp chan string){
 	// Read the command output
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
-	  resp<-scanner.Text()
+		resp <- scanner.Text()
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -112,4 +114,56 @@ func CMDOutput(name string,args []string,resp chan string){
 	if err := cmd.Wait(); err != nil {
 		fmt.Printf("Error waiting for command %s: %v\n", name, err)
 	}
+}
+
+// COMMANDS USING MULTIPLE PIPES EXAMPLE
+func PipeCommand(resp chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	cmd := "ls -l | grep main | wc -l"
+	Execute(cmd,resp)
+
+}
+
+func Execute(cmd string,resp chan string) {
+	c := strings.Split(cmd, "|")
+	var cmdlist []*exec.Cmd
+	for _, val := range c {
+		f := strings.Fields(val)
+		x := exec.Command(f[0], f[1:]...)
+		fmt.Println(x)
+		cmdlist = append(cmdlist, x)
+	}
+
+	for i := 0; i < len(cmdlist)-1; i++ {
+		j := i + 1
+
+		out, err := cmdlist[i].StdoutPipe()
+		if err != nil {
+			fmt.Println(err)
+		}
+		cmdlist[j].Stdin = out
+	}
+
+	out, _ := cmdlist[len(cmdlist)-1].StdoutPipe()
+
+	for i := 0 ;i<len(cmdlist);i++{
+		err := cmdlist[i].Start()
+		if err!=nil{
+			fmt.Println("Error while starting the command",err)
+		}
+	}
+	res,err := io.ReadAll(out)
+	if err!=nil{
+		log.Println(err)
+	}
+	for i := 0 ;i<len(cmdlist);i++{
+		err :=cmdlist[i].Wait()
+		if err!=nil{
+			fmt.Println("Error while waiting",err)
+		}
+	}
+
+
+	resp<- string(res)
+
 }
