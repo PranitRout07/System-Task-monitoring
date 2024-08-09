@@ -19,11 +19,12 @@ func main() {
   
 	resp := make(chan string, 1024) 
 	wg := &sync.WaitGroup{}
-	wg.Add(3)
+	wg.Add(5)
 	go AllProcesses(resp, wg)
 	go CPUDetails(resp, wg)
 	go DiskDetails(resp, wg)
-
+	go MemoryUsage(resp,wg)
+	go NetworkInterfaces(resp,wg)	
 
 	wg.Wait()
 	close(resp)
@@ -49,7 +50,7 @@ func AllProcesses(resp chan string, wg *sync.WaitGroup) {
 func CPUDetails(resp chan string, wg *sync.WaitGroup) {
 	cmd := Command{
 		name:"lscpu",
-		args:[]string{""},
+		args:[]string{},
 	}
 	CMDOutput(cmd.name,cmd.args,resp)
 	wg.Done()
@@ -64,6 +65,26 @@ func DiskDetails(resp chan string, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
+func MemoryUsage(resp chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	cmd := Command{
+		name: "free",
+		args: []string{"-m"},
+	}
+	CMDOutput(cmd.name, cmd.args, resp);
+		
+	
+}
+
+func NetworkInterfaces(resp chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	cmd := Command{
+		name: "ip",
+		args: []string{"-s", "link"},
+	}
+	CMDOutput(cmd.name, cmd.args, resp)
+		
+}
 
 func CMDOutput(name string,args []string,resp chan string){
 	cmd := exec.Command(name, args...)
