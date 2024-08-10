@@ -22,12 +22,15 @@ func main() {
 
 		resp := make(chan string, 1024)
 		wg := &sync.WaitGroup{}
-		wg.Add(6)
+		wg.Add(9)
 		go AllProcesses(resp, wg)
 		go CPUDetails(resp, wg)
 		go DiskDetails(resp, wg)
 		go MemoryUsage(resp, wg)
 		go NetworkInterfaces(resp, wg)
+		go UpTime(resp, wg)
+		go Top(resp, wg)
+		go NetworkStats(resp, wg)
 		go PipeCommand(resp,wg)
 		wg.Wait()
 		close(resp)
@@ -88,6 +91,35 @@ func NetworkInterfaces(resp chan string, wg *sync.WaitGroup) {
 
 }
 
+func UpTime(resp chan string, wg *sync.WaitGroup){
+	cmd := Command{
+		name: "uptime",
+		args: []string{},
+	}
+	CMDOutput(cmd.name, cmd.args, resp)
+	
+	defer wg.Done()
+}
+
+func Top(resp chan string, wg *sync.WaitGroup){
+	cmd := Command{
+		name: "Top",
+		args: []string{"-b", "-n", "1"},
+	}
+	CMDOutput(cmd.name, cmd.args, resp)
+	defer wg.Done()
+}
+
+func NetworkStats(resp chan string, wg *sync.WaitGroup){
+	cmd := Command{
+		name: "Netstat",
+		args: []string{"-i"},
+	}
+	CMDOutput(cmd.name, cmd.args, resp)
+	defer wg.Done()
+}
+
+
 func CMDOutput(name string, args []string, resp chan string) {
 	cmd := exec.Command(name, args...)
 	//
@@ -133,7 +165,7 @@ func Execute(cmd string,resp chan string) {
 		fmt.Println(x)
 		cmdlist = append(cmdlist, x)
 	}
-
+// pipe connections
 	for i := 0; i < len(cmdlist)-1; i++ {
 		j := i + 1
 
