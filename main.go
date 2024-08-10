@@ -1,201 +1,131 @@
 package main
 
 import (
-	"bufio"
+
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 )
 
-type Command struct {
-	name string
-	args []string
+type Command struct{
+	cmdStr string 
+	key string
 }
+
+var (
+	data = make(map[string]string)  //In future this may be changed to a time series database
+	mutex   sync.Mutex
+)
 
 func main() {
+	r := chi.NewRouter()
+	// r.Get("/", )
+	r.Get("/metrics", serveMetrics)
 
-	for {
-
-		resp := make(chan string, 1024)
-		wg := &sync.WaitGroup{}
-		wg.Add(9)
-		go AllProcesses(resp, wg)
-		go CPUDetails(resp, wg)
-		go DiskDetails(resp, wg)
-		go MemoryUsage(resp, wg)
-		go NetworkInterfaces(resp, wg)
-		go UpTime(resp, wg)
-		go Top(resp, wg)
-		go NetworkStats(resp, wg)
-		go PipeCommand(resp,wg)
-		wg.Wait()
-		close(resp)
-
-		for r := range resp {
-			fmt.Println(r)
+	go func() {
+		fmt.Println("Running on port 3000...")
+		if err := http.ListenAndServe(":3000", r); err != nil {
+			log.Fatalf("Failed to start server: %v", err)
 		}
-		time.Sleep(1 * time.Second)
-	}
+	}()
 
+	go func() {
+		for {
+			fetchMetrics()
+			time.Sleep(1 * time.Second) // Adjust the sleep duration as needed
+										// In future it will be updated such that it can 
+										//take input from users .
+		}
+	}()
+
+	select {} // Keep the main function running
 }
 
-func AllProcesses(resp chan string, wg *sync.WaitGroup) {
+func fetchMetrics() {
 
-	cmd := Command{
-		name: "ps",
-		args: []string{"aux"},
-	}
-	CMDOutput(cmd.name, cmd.args, resp)
-	wg.Done()
-}
-
-func CPUDetails(resp chan string, wg *sync.WaitGroup) {
-	cmd := Command{
-		name: "lscpu",
-		args: []string{},
-	}
-	CMDOutput(cmd.name, cmd.args, resp)
-	wg.Done()
-}
-
-func DiskDetails(resp chan string, wg *sync.WaitGroup) {
-	cmd := Command{
-		name: "free",
-		args: []string{"-m"},
-	}
-	CMDOutput(cmd.name, cmd.args, resp)
-	wg.Done()
-}
-
-func MemoryUsage(resp chan string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	cmd := Command{
-		name: "free",
-		args: []string{"-m"},
-	}
-	CMDOutput(cmd.name, cmd.args, resp)
-
-}
-
-func NetworkInterfaces(resp chan string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	cmd := Command{
-		name: "ip",
-		args: []string{"-s", "link"},
-	}
-	CMDOutput(cmd.name, cmd.args, resp)
-
-}
-
-func UpTime(resp chan string, wg *sync.WaitGroup){
-	cmd := Command{
-		name: "uptime",
-		args: []string{},
-	}
-	CMDOutput(cmd.name, cmd.args, resp)
+	wg := &sync.WaitGroup{}
+	wg.Add(7)
+	// command,args,key,sync.wait
 	
+	go executePipeCommand("ps aux", "all_processes",wg)
+	go executePipeCommand("lscpu", "cpu_details",wg)
+	go executePipeCommand("df -h", "disk_details",wg)
+	go executePipeCommand("free -m", "memory_usage",wg)
+	go executePipeCommand("ip -s link", "network_interfaces",wg)
+	go executePipeCommand("ip address", "ip_addresses",wg)
+	go executePipeCommand("ls -l | grep main | wc -l", "pipe_command",wg)
+
+	wg.Wait()
+
+}
+
+func executePipeCommand(cmd string, key string,wg *sync.WaitGroup) {
 	defer wg.Done()
-}
-
-func Top(resp chan string, wg *sync.WaitGroup){
-	cmd := Command{
-		name: "Top",
-		args: []string{"-b", "-n", "1"},
-	}
-	CMDOutput(cmd.name, cmd.args, resp)
-	defer wg.Done()
-}
-
-func NetworkStats(resp chan string, wg *sync.WaitGroup){
-	cmd := Command{
-		name: "Netstat",
-		args: []string{"-i"},
-	}
-	CMDOutput(cmd.name, cmd.args, resp)
-	defer wg.Done()
-}
-
-
-func CMDOutput(name string, args []string, resp chan string) {
-	cmd := exec.Command(name, args...)
-	//
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		fmt.Printf("Error creating StdoutPipe for %s: %v\n", name, err)
-	}
-
-	if err := cmd.Start(); err != nil {
-		fmt.Printf("Error while starting the command %s: %v\n", name, err)
-
-	}
-
-	// Read the command output
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		resp <- scanner.Text()
-	}
-
-	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading scanner %s: %v\n", name, err)
-	}
-
-	if err := cmd.Wait(); err != nil {
-		fmt.Printf("Error waiting for command %s: %v\n", name, err)
-	}
-}
-
-// COMMANDS USING MULTIPLE PIPES EXAMPLE
-func PipeCommand(resp chan string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	cmd := "ls -l | grep main | wc -l"
-	Execute(cmd,resp)
-
-}
-
-func Execute(cmd string,resp chan string) {
 	c := strings.Split(cmd, "|")
 	var cmdlist []*exec.Cmd
 	for _, val := range c {
 		f := strings.Fields(val)
 		x := exec.Command(f[0], f[1:]...)
-		fmt.Println(x)
 		cmdlist = append(cmdlist, x)
 	}
-// pipe connections
+
 	for i := 0; i < len(cmdlist)-1; i++ {
 		j := i + 1
-
 		out, err := cmdlist[i].StdoutPipe()
 		if err != nil {
 			fmt.Println(err)
+			return
 		}
 		cmdlist[j].Stdin = out
 	}
 
 	out, _ := cmdlist[len(cmdlist)-1].StdoutPipe()
 
-	for i := 0 ;i<len(cmdlist);i++{
-		err := cmdlist[i].Start()
-		if err!=nil{
-			fmt.Println("Error while starting the command",err)
+	for i := 0; i < len(cmdlist); i++ {
+		if err := cmdlist[i].Start(); err != nil {
+			fmt.Println("Error while starting the command", err)
+			return
 		}
 	}
-	res,err := io.ReadAll(out)
-	if err!=nil{
+
+	res, err := io.ReadAll(out)
+	if err != nil {
 		log.Println(err)
 	}
-	for i := 0 ;i<len(cmdlist);i++{
-		err :=cmdlist[i].Wait()
-		if err!=nil{
-			fmt.Println("Error while waiting",err)
+	for i := 0; i < len(cmdlist); i++ {
+		if err := cmdlist[i].Wait(); err != nil {
+			fmt.Println("Error while waiting", err)
 		}
 	}
 
+	mutex.Lock()
+	data[key] = string(res)
+	mutex.Unlock()
+	// log.Printf("Pipe command output: %s", string(res)) // Debugging line
+}
 
-	resp<- string(res)
+// func serveHome(w http.ResponseWriter, r *http.Request) {
+// 	http.ServeFile(w, r, "index.html")
+// }
 
+func serveMetrics(w http.ResponseWriter, r *http.Request) {
+	// mutex.Lock() //
+	// defer mutex.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		http.Error(w, "Error generating JSON", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(jsonData)
 }
