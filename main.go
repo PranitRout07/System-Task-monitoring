@@ -52,16 +52,17 @@ func main() {
 func fetchMetrics() {
 
 	wg := &sync.WaitGroup{}
-	wg.Add(7)
+	wg.Add(1)
 	// command,args,key,sync.wait
 	
-	go executePipeCommand("ps aux", "all_processes",wg)
-	go executePipeCommand("lscpu", "cpu_details",wg)
-	go executePipeCommand("df -h", "disk_details",wg)
-	go executePipeCommand("free -m", "memory_usage",wg)
-	go executePipeCommand("ip -s link", "network_interfaces",wg)
-	go executePipeCommand("ip address", "ip_addresses",wg)
-	go executePipeCommand("ls -l | grep main | wc -l", "pipe_command",wg)
+	// go executePipeCommand("ps aux", "all_processes",wg)
+	// go executePipeCommand("lscpu", "cpu_details",wg)
+	// go executePipeCommand("df -h", "disk_details",wg)
+	// go executePipeCommand("free -m", "memory_usage",wg)
+	go executePipeCommand("cat /proc/meminfo", "memory_usage",wg)
+	// go executePipeCommand("ip -s link", "network_interfaces",wg)
+	// go executePipeCommand("ip address", "ip_addresses",wg)
+	// go executePipeCommand("ls -l | grep main | wc -l", "pipe_command",wg)
 
 	wg.Wait()
 
