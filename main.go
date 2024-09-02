@@ -4,11 +4,11 @@ import (
 
 	"encoding/json"
 	"fmt"
-	"io"
+	// "io"
 	"log"
 	"net/http"
 	"os/exec"
-	"strings"
+	// "strings"
 	"sync"
 	"time"
 
@@ -28,7 +28,7 @@ var (
 func main() {
 	r := chi.NewRouter()
 	// r.Get("/", )
-	r.Get("/metrics", serveMetrics)
+	r.Get("/api/metrics", serveMetrics)
 
 	go func() {
 		fmt.Println("Running on port 3000...")
@@ -39,8 +39,10 @@ func main() {
 
 	go func() {
 		for {
+			// fmt.Println("hello")
 			fetchMetrics()
-			time.Sleep(1 * time.Second) // Adjust the sleep duration as needed
+			time.Sleep(1 * time.Second)
+			 // Adjust the sleep duration as needed
 										// In future it will be updated such that it can 
 										//take input from users .
 		}
@@ -55,11 +57,15 @@ func fetchMetrics() {
 	wg.Add(1)
 	// command,args,key,sync.wait
 	
-	// go executePipeCommand("ps aux", "all_processes",wg)
+	// go executeCommand("ps aux", "all_processes")
 	// go executePipeCommand("lscpu", "cpu_details",wg)
 	// go executePipeCommand("df -h", "disk_details",wg)
 	// go executePipeCommand("free -m", "memory_usage",wg)
-	go executePipeCommand("cat /proc/meminfo", "memory_usage",wg)
+// 	go executePipeCommand(`awk 'BEGIN { print "{" } 
+// { gsub(":", ""); print "\"" $1 "\": \"" $2 "\"," }
+// END { print "}" }' /proc/meminfo | sed '$s/,$//'`, "memory_usage",wg)
+	go executeCommand(`awk 'BEGIN { print "{" } { gsub(":", ""); print "\"" $1 "\": \"" $2 "\"," } END { print "}" }' /proc/meminfo | sed '$s/,$//'`, "memory_usage",wg)
+
 	// go executePipeCommand("ip -s link", "network_interfaces",wg)
 	// go executePipeCommand("ip address", "ip_addresses",wg)
 	// go executePipeCommand("ls -l | grep main | wc -l", "pipe_command",wg)
@@ -68,54 +74,70 @@ func fetchMetrics() {
 
 }
 
-func executePipeCommand(cmd string, key string,wg *sync.WaitGroup) {
-	defer wg.Done()
-	c := strings.Split(cmd, "|")
-	var cmdlist []*exec.Cmd
-	for _, val := range c {
-		f := strings.Fields(val)
-		x := exec.Command(f[0], f[1:]...)
-		cmdlist = append(cmdlist, x)
-	}
+// func executePipeCommand(cmd string, key string,wg *sync.WaitGroup) {
+// 	defer wg.Done()
+// 	c := strings.Split(cmd, "|")
+// 	var cmdlist []*exec.Cmd
+// 	for _, val := range c {
+// 		f := strings.Fields(val)
+// 		x := exec.Command(f[0], f[1:]...)
+// 		cmdlist = append(cmdlist, x)
+// 	}
+// 	for i := 0; i < len(cmdlist)-1; i++ {
+// 		j := i + 1
+// 		out, err := cmdlist[i].StdoutPipe()
+// 		if err != nil {
+// 			fmt.Println(err)
+// 			return
+// 		}
+// 		cmdlist[j].Stdin = out
+// 	}
 
-	for i := 0; i < len(cmdlist)-1; i++ {
-		j := i + 1
-		out, err := cmdlist[i].StdoutPipe()
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		cmdlist[j].Stdin = out
-	}
+// 	out, _ := cmdlist[len(cmdlist)-1].StdoutPipe()
 
-	out, _ := cmdlist[len(cmdlist)-1].StdoutPipe()
+// 	for i := 0; i < len(cmdlist); i++ {
+// 		if err := cmdlist[i].Start(); err != nil {
+// 			fmt.Println("Error while starting the command", err)
+// 			return
+// 		}
+// 	}
 
-	for i := 0; i < len(cmdlist); i++ {
-		if err := cmdlist[i].Start(); err != nil {
-			fmt.Println("Error while starting the command", err)
-			return
-		}
-	}
+// 	res, err := io.ReadAll(out)
+// 	if err != nil {
+// 		log.Println(err)
+// 	}
+// 	fmt.Println(cmdlist)
+// 	for i := 0; i < len(cmdlist); i++ {
+// 		if err := cmdlist[i].Wait(); err != nil {
+// 			fmt.Println("Error while waiting", err)
+// 			return
+// 		}
+// 	}
 
-	res, err := io.ReadAll(out)
-	if err != nil {
-		log.Println(err)
-	}
-	for i := 0; i < len(cmdlist); i++ {
-		if err := cmdlist[i].Wait(); err != nil {
-			fmt.Println("Error while waiting", err)
-		}
-	}
-
-	mutex.Lock()
-	data[key] = string(res)
-	mutex.Unlock()
-	// log.Printf("Pipe command output: %s", string(res)) // Debugging line
-}
+// 	mutex.Lock()
+// 	data[key] = string(res)
+// 	mutex.Unlock()
+// 	// log.Printf("Pipe command output: %s", string(res)) // Debugging line
+// }
 
 // func serveHome(w http.ResponseWriter, r *http.Request) {
 // 	http.ServeFile(w, r, "index.html")
 // }
+func executeCommand(cmdStr string, key string,wg *sync.WaitGroup ) {
+	defer wg.Done()
+    cmd := exec.Command("sh", "-c", cmdStr) // Use bash -c to handle complex commands
+    out, err := cmd.CombinedOutput()
+    if err != nil {
+        fmt.Printf("Error executing command %s: %v\n", cmdStr, err)
+        return
+    }
+    
+
+    mutex.Lock()
+    data[key] = string(out)
+    mutex.Unlock()
+}
+
 
 func serveMetrics(w http.ResponseWriter, r *http.Request) {
 	// mutex.Lock() //
